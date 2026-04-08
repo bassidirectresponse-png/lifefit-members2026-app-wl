@@ -1,6 +1,7 @@
 import { Header } from "@/components/member/header";
 import { MobileNav } from "@/components/member/mobile-nav";
 import { LenisProvider } from "@/components/member/lenis-provider";
+import { PwaInstallBanner } from "@/components/member/pwa-install-banner";
 
 export default function MemberLayout({
   children,
@@ -14,6 +15,7 @@ export default function MemberLayout({
         {children}
       </main>
       <MobileNav />
+      <PwaInstallBanner />
     </LenisProvider>
   );
 }

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Fraunces } from "next/font/google";
+import { I18nProvider } from "@/lib/i18n/context";
 import "./globals.css";
 
 const inter = Inter({
@@ -18,9 +19,9 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "Life Fit Members — Seu Clube de Bem-Estar",
+  title: "Life Fit Members — Votre Club de Bien-Être",
   description:
-    "Plataforma exclusiva de rituais semanais para mulheres que escolheram emagrecer de forma natural e definitiva.",
+    "Plateforme exclusive de rituels hebdomadaires pour les femmes qui choisissent de mincir naturellement et définitivement.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
@@ -42,9 +43,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR" className={`${inter.variable} ${fraunces.variable}`}>
+    <html lang="fr" className={`${inter.variable} ${fraunces.variable}`}>
       <body className="font-body bg-bg-primary text-text-primary">
-        {children}
+        <I18nProvider>{children}</I18nProvider>
       </body>
     </html>
   );

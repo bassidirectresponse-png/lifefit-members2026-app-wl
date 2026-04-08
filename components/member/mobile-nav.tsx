@@ -4,21 +4,23 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, CalendarDays, Gift, User } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const navItems = [
-  { href: "/", label: "Início", icon: Home },
-  { href: "/#semanas", label: "Semanas", icon: CalendarDays },
-  { href: "/#bonus", label: "Bônus", icon: Gift },
-  { href: "/conta", label: "Conta", icon: User },
-];
+import { useI18n } from "@/lib/i18n/context";
 
 export function MobileNav() {
   const pathname = usePathname();
+  const { t } = useI18n();
+
+  const navItems = [
+    { href: "/", label: t("nav.home"), icon: Home },
+    { href: "/#semanas", label: t("nav.weeks"), icon: CalendarDays },
+    { href: "/#bonus", label: t("nav.bonus"), icon: Gift },
+    { href: "/conta", label: t("nav.account"), icon: User },
+  ];
 
   return (
     <nav
       className="fixed bottom-0 left-0 right-0 z-50 md:hidden border-t border-border bg-bg-primary/95 backdrop-blur-xl"
-      aria-label="Navegação mobile"
+      aria-label="Navigation mobile"
     >
       <div className="flex items-center justify-around h-16 px-2">
         {navItems.map((item) => {
@@ -50,7 +52,6 @@ export function MobileNav() {
           );
         })}
       </div>
-      {/* Safe area padding for devices with home indicator */}
       <div className="h-[env(safe-area-inset-bottom)]" />
     </nav>
   );
