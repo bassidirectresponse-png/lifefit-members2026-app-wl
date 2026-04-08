@@ -1,102 +1,111 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { webhookPurchaseSchema, checkRateLimit } from "@/lib/security";
 
 /**
- * Webhook endpoint para receber notificações de compra de módulos premium.
+ * POST /api/webhooks/purchase
  *
- * Payload esperado (POST JSON):
- * {
- *   "email": "aluna@email.com",        // Email da compradora
- *   "module_id": "uuid-do-modulo",      // ID do módulo comprado
- *   "transaction_id": "abc123"          // Opcional: referência da transação
- * }
+ * Receives purchase notifications from external checkout providers.
+ * REQUIRES: Authorization: Bearer <WEBHOOK_SECRET>
  *
- * Headers esperados:
- *   Authorization: Bearer <WEBHOOK_SECRET>
- *
- * Compatível com: Hotmart, Kiwify, Eduzz, Monetizze (adaptar payload via proxy/Zapier)
+ * Payload: { "email": "user@email.com", "module_id": "uuid", "transaction_id": "optional" }
  */
 export async function POST(request: Request) {
-  try {
-    // Validate webhook secret
-    const authHeader = request.headers.get("authorization");
-    const webhookSecret = process.env.WEBHOOK_SECRET;
-
-    if (webhookSecret && authHeader !== `Bearer ${webhookSecret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const body = await request.json();
-    const { email, module_id } = body;
-
-    if (!email || !module_id) {
-      return NextResponse.json(
-        { error: "Missing required fields: email, module_id" },
-        { status: 400 }
-      );
-    }
-
-    // Use service role to bypass RLS
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    );
-
-    // Find user by email
-    const { data: users } = await supabase.auth.admin.listUsers();
-    const user = users?.users?.find(
-      (u) => u.email?.toLowerCase() === email.toLowerCase()
-    );
-
-    if (!user) {
-      return NextResponse.json(
-        { error: `User not found: ${email}` },
-        { status: 404 }
-      );
-    }
-
-    // Verify module exists and is locked type
-    const { data: modulo } = await supabase
-      .from("modulos")
-      .select("id, tipo, titulo")
-      .eq("id", module_id)
-      .single();
-
-    if (!modulo) {
-      return NextResponse.json(
-        { error: `Module not found: ${module_id}` },
-        { status: 404 }
-      );
-    }
-
-    // Create purchase record
-    const { error: purchaseError } = await supabase
-      .from("user_purchases")
-      .upsert(
-        {
-          user_id: user.id,
-          modulo_id: module_id,
-          purchased_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,modulo_id" }
-      );
-
-    if (purchaseError) {
-      return NextResponse.json(
-        { error: purchaseError.message },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: `Access granted: ${user.email} → ${modulo.titulo}`,
-    });
-  } catch {
+  // Rate limit: 30 requests per minute per IP
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0] || "unknown";
+  const rl = checkRateLimit(`webhook:${ip}`, 30, 60_000);
+  if (!rl.allowed) {
     return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
     );
   }
+
+  // Auth is MANDATORY — no WEBHOOK_SECRET = endpoint disabled
+  const webhookSecret = process.env.WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    return NextResponse.json(
+      { error: "Webhook not configured" },
+      { status: 503 }
+    );
+  }
+
+  const authHeader = request.headers.get("authorization");
+  if (authHeader !== `Bearer ${webhookSecret}`) {
+    // Constant-time-ish comparison wouldn't matter here but we return generic error
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Validate body with Zod
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const parsed = webhookPurchaseSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Invalid payload", details: parsed.error.issues },
+      { status: 400 }
+    );
+  }
+
+  const { email, module_id } = parsed.data;
+
+  // Service role key is SERVER-ONLY — never in client bundles
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceKey) {
+    return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
+  }
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    serviceKey,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+
+  // Find user by email
+  const { data: users } = await supabase.auth.admin.listUsers();
+  const user = users?.users?.find(
+    (u) => u.email?.toLowerCase() === email.toLowerCase()
+  );
+
+  if (!user) {
+    // Generic error — don't reveal if email exists
+    return NextResponse.json({ error: "Processing failed" }, { status: 422 });
+  }
+
+  // Verify module exists
+  const { data: modulo } = await supabase
+    .from("modulos")
+    .select("id, titulo")
+    .eq("id", module_id)
+    .single();
+
+  if (!modulo) {
+    return NextResponse.json({ error: "Invalid module" }, { status: 422 });
+  }
+
+  // Grant access
+  const { error: purchaseError } = await supabase
+    .from("user_purchases")
+    .upsert(
+      { user_id: user.id, modulo_id: module_id, purchased_at: new Date().toISOString() },
+      { onConflict: "user_id,modulo_id" }
+    );
+
+  if (purchaseError) {
+    // Don't leak DB error details
+    console.error("[webhook] Purchase error:", purchaseError.message);
+    return NextResponse.json({ error: "Processing failed" }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
+}
+
+// Block other methods
+export async function GET() {
+  return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
 }

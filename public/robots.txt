@@ -1,0 +1,11 @@
+User-agent: *
+Disallow: /admin
+Disallow: /api
+Disallow: /conta
+Disallow: /aula
+Disallow: /semana
+
+# Only allow crawling of login page and public assets
+Allow: /login
+Allow: /icons/
+Allow: /manifest.json
