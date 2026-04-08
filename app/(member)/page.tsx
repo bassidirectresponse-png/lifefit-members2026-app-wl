@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { ArrowRight, Gift, AlertCircle, Lock, Check, Star, ExternalLink } from "lucide-react";
 import Link from "next/link";
@@ -15,12 +16,28 @@ import { GlowButton } from "@/components/ui/glow-button";
 import { NetflixRow, NetflixCard } from "@/components/member/netflix-row";
 import type { ModuloComProgresso, UserPurchase } from "@/types/database";
 
+// Defer time-dependent values to avoid hydration mismatch
 function useGreeting() {
   const { t } = useI18n();
-  const hora = new Date().getHours();
-  if (hora < 12) return t("dashboard.greeting.morning");
-  if (hora < 18) return t("dashboard.greeting.afternoon");
-  return t("dashboard.greeting.evening");
+  const [greeting, setGreeting] = useState("");
+  useEffect(() => {
+    const hora = new Date().getHours();
+    if (hora < 12) setGreeting(t("dashboard.greeting.morning"));
+    else if (hora < 18) setGreeting(t("dashboard.greeting.afternoon"));
+    else setGreeting(t("dashboard.greeting.evening"));
+  }, [t]);
+  return greeting;
+}
+
+function useQuoteOfDay() {
+  const { t } = useI18n();
+  const [quote, setQuote] = useState("");
+  useEffect(() => {
+    const quotes = [t("quotes.1"), t("quotes.2"), t("quotes.3"), t("quotes.4"), t("quotes.5")];
+    const day = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
+    setQuote(quotes[day % quotes.length]);
+  }, [t]);
+  return quote;
 }
 
 // Regular module card (main/bonus)
@@ -138,9 +155,13 @@ export default function DashboardPage() {
   const { profile, modulos, purchases, loading, totalAulas, aulasConcluidas, error } = useMemberData();
   const { t } = useI18n();
   const greeting = useGreeting();
+  const quote = useQuoteOfDay();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
 
   const progressPercentage = totalAulas > 0 ? (aulasConcluidas / totalAulas) * 100 : 0;
-  const dataInicio = profile?.data_inicio_jornada || new Date().toISOString();
+  const dataInicio = profile?.data_inicio_jornada || "2026-01-01T00:00:00Z";
 
   // Categorize modules
   const mainModules = modulos.filter((m) => (m.tipo || "main") === "main");
@@ -148,7 +169,7 @@ export default function DashboardPage() {
   const lockedModules = modulos.filter((m) => m.tipo === "locked" && !purchases.some((p) => p.modulo_id === m.id));
   const purchasedLockedModules = modulos.filter((m) => m.tipo === "locked" && purchases.some((p) => p.modulo_id === m.id));
 
-  const semanaAtual = mainModules.find((m) => {
+  const semanaAtual = mounted ? mainModules.find((m) => {
     const purchased = purchases.some((p) => p.modulo_id === m.id);
     const estado = getEstadoModulo({
       tipo: m.tipo || "main", unlockAfterDays: m.unlock_after_days || 0,
@@ -157,12 +178,9 @@ export default function DashboardPage() {
       totalAulas: m.total_aulas, purchased,
     });
     return estado === "atual" && m.aulas_concluidas < m.total_aulas;
-  });
+  }) : undefined;
 
   const semanasConcluidasCount = mainModules.filter((m) => m.total_aulas > 0 && m.aulas_concluidas === m.total_aulas).length;
-
-  const quotes = [t("quotes.1"), t("quotes.2"), t("quotes.3"), t("quotes.4"), t("quotes.5")];
-  const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
 
   if (loading) {
     return <div className="container-app py-8"><HeroSkeleton /><div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">{[1, 2, 3].map((i) => <CardSkeleton key={i} />)}</div></div>;
@@ -183,7 +201,7 @@ export default function DashboardPage() {
                 <h1 className="font-display text-h1 text-text-primary">
                   {greeting}, <span className="text-pink-primary">{profile?.nome?.split(" ")[0] || ""}</span>
                 </h1>
-                <p className="text-body text-text-secondary max-w-lg italic font-display">&ldquo;{quotes[dayOfYear % quotes.length]}&rdquo;</p>
+                {quote && <p className="text-body text-text-secondary max-w-lg italic font-display">&ldquo;{quote}&rdquo;</p>}
                 <div className="flex items-center gap-6 pt-4">
                   <div>
                     <span className="font-display text-h3 text-pink-primary"><AnimatedCounter value={semanasConcluidasCount} /></span>
