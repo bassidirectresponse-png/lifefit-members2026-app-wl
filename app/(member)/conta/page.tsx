@@ -77,11 +77,13 @@ export default function ContaPage() {
           .eq("concluida", true),
       ]);
 
-      const profileData = profileRes.data as Profile;
+      const profileData = profileRes.data as Profile | null;
       setProfile(profileData);
       setTotalModulos(modulosRes.data?.length || 0);
       setAulasConcluidas(progressoRes.data?.length || 0);
-      resetProfile({ nome: profileData.nome });
+      if (profileData) {
+        resetProfile({ nome: profileData.nome });
+      }
       setLoading(false);
     }
 
