@@ -7,17 +7,18 @@ import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/admin/toast";
 import { Breadcrumbs } from "@/components/admin/breadcrumbs";
 import { FormField, Input, Textarea } from "@/components/admin/form-field";
+import { LocaleTabsField } from "@/components/admin/locale-tabs";
 import { VideoPreview } from "@/components/admin/video-preview";
 import { cn } from "@/lib/utils";
-import type { Modulo, TipoAula } from "@/types/database";
+import type { Modulo, TipoAula, I18nField } from "@/types/database";
 
 const TIPOS: { value: TipoAula; label: string; icon: typeof PlayCircle; help: string }[] = [
-  { value: "video", label: "Vidéo", icon: PlayCircle, help: "YouTube, Vimeo ou Google Drive" },
-  { value: "pdf", label: "PDF", icon: FileText, help: "Lien direct vers un PDF" },
-  { value: "audio", label: "Audio", icon: Headphones, help: "Lien vers fichier audio" },
-  { value: "link", label: "Lien externe", icon: ExternalLink, help: "App ou site externe" },
+  { value: "video", label: "Vidéo", icon: PlayCircle, help: "YouTube, Vimeo ou Drive" },
+  { value: "pdf", label: "PDF", icon: FileText, help: "Lien direct PDF" },
+  { value: "audio", label: "Audio", icon: Headphones, help: "Fichier audio" },
+  { value: "link", label: "Lien externe", icon: ExternalLink, help: "App ou site" },
   { value: "checklist", label: "Checklist", icon: CheckSquare, help: "Liste interactive" },
-  { value: "texto", label: "Texte", icon: BookOpenText, help: "Article / contenu écrit" },
+  { value: "texto", label: "Texte", icon: BookOpenText, help: "Article écrit" },
 ];
 
 export default function NovaAulaPage() {
@@ -28,16 +29,13 @@ export default function NovaAulaPage() {
   const [modulo, setModulo] = useState<Modulo | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    titulo: "",
-    descricao: "",
-    tipo: "video" as TipoAula,
-    conteudo_url: "",
-    duracao_min: "",
-    ordem: 1,
+    titulo: "", descricao: "", tipo: "video" as TipoAula,
+    conteudo_url: "", duracao_min: "" as string | number, ordem: 1,
+    unlock_after_days: 0,
+    titulo_i18n: {} as I18nField, descricao_i18n: {} as I18nField,
   });
 
-  const set = (key: string, val: string | number) =>
-    setForm((prev) => ({ ...prev, [key]: val }));
+  const set = (key: string, val: unknown) => setForm((prev) => ({ ...prev, [key]: val }));
 
   useEffect(() => {
     async function load() {
@@ -52,17 +50,13 @@ export default function NovaAulaPage() {
   const handleSubmit = async () => {
     if (!form.titulo.trim()) { toast.error("Le titre est obligatoire"); return; }
     setSaving(true);
-
     const { error } = await supabase.from("aulas").insert({
-      modulo_id: moduloId,
-      titulo: form.titulo,
-      descricao: form.descricao,
-      tipo: form.tipo,
-      conteudo_url: form.conteudo_url || null,
+      modulo_id: moduloId, titulo: form.titulo, descricao: form.descricao,
+      tipo: form.tipo, conteudo_url: form.conteudo_url || null,
       duracao_min: form.duracao_min ? Number(form.duracao_min) : null,
-      ordem: Number(form.ordem),
+      ordem: Number(form.ordem), unlock_after_days: Number(form.unlock_after_days) || 0,
+      titulo_i18n: form.titulo_i18n, descricao_i18n: form.descricao_i18n,
     });
-
     if (error) { toast.error(error.message); setSaving(false); return; }
     toast.success("Leçon créée");
     router.push(`/admin/modulos/${moduloId}`);
@@ -70,46 +64,26 @@ export default function NovaAulaPage() {
 
   return (
     <div className="max-w-2xl">
-      <Breadcrumbs
-        items={[
-          { label: "Admin", href: "/admin" },
-          { label: "Modules", href: "/admin/modulos" },
-          { label: modulo?.titulo || "...", href: `/admin/modulos/${moduloId}` },
-          { label: "Nouvelle leçon" },
-        ]}
-      />
-
-      <h1 className="font-display text-h2 text-text-primary mb-8">
-        Nouvelle leçon
-      </h1>
+      <Breadcrumbs items={[{ label: "Admin", href: "/admin" }, { label: "Modules", href: "/admin/modulos" }, { label: modulo?.titulo || "...", href: `/admin/modulos/${moduloId}` }, { label: "Nouvelle leçon" }]} />
+      <h1 className="font-display text-h2 text-text-primary mb-8">Nouvelle leçon</h1>
 
       <div className="space-y-6">
         <FormField label="Titre *">
           <Input value={form.titulo} onChange={(e) => set("titulo", e.target.value)} placeholder="Ex: Bienvenue dans votre rituel" />
         </FormField>
+        <LocaleTabsField label="Titre — traductions" field="titulo_i18n" value={form.titulo_i18n} onChange={(f, v) => set(f, v)} />
 
         <FormField label="Description">
-          <Textarea value={form.descricao} onChange={(e) => set("descricao", e.target.value)} rows={3} placeholder="Décrivez le contenu..." />
+          <Textarea value={form.descricao} onChange={(e) => set("descricao", e.target.value)} rows={3} />
         </FormField>
+        <LocaleTabsField label="Description — traductions" field="descricao_i18n" value={form.descricao_i18n} onChange={(f, v) => set(f, v)} multiline />
 
-        {/* Tipo visual */}
         <FormField label="Type de contenu">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             {TIPOS.map((t) => {
-              const Icon = t.icon;
-              const sel = form.tipo === t.value;
+              const Icon = t.icon; const sel = form.tipo === t.value;
               return (
-                <button
-                  key={t.value}
-                  type="button"
-                  onClick={() => set("tipo", t.value)}
-                  className={cn(
-                    "flex flex-col items-start gap-1 p-3 rounded-[10px] border text-left transition-all",
-                    sel
-                      ? "border-pink-primary bg-pink-primary/10 text-pink-primary"
-                      : "border-border bg-bg-tertiary text-text-secondary hover:border-pink-border"
-                  )}
-                >
+                <button key={t.value} type="button" onClick={() => set("tipo", t.value)} className={cn("flex flex-col items-start gap-1 p-3 rounded-[10px] border text-left transition-all", sel ? "border-pink-primary bg-pink-primary/10 text-pink-primary" : "border-border bg-bg-tertiary text-text-secondary hover:border-pink-border")}>
                   <Icon className="w-4 h-4" />
                   <span className="text-[13px] font-semibold">{t.label}</span>
                   <span className="text-[11px] text-text-tertiary">{t.help}</span>
@@ -119,36 +93,22 @@ export default function NovaAulaPage() {
           </div>
         </FormField>
 
-        {/* URL */}
         {form.tipo !== "checklist" && form.tipo !== "texto" && (
           <FormField label="URL du contenu">
-            <Input
-              value={form.conteudo_url}
-              onChange={(e) => set("conteudo_url", e.target.value)}
-              placeholder={
-                form.tipo === "video"
-                  ? "https://youtube.com/watch?v=... ou Google Drive"
-                  : form.tipo === "pdf"
-                  ? "https://lien-pdf.com/fichier.pdf"
-                  : "https://..."
-              }
-            />
+            <Input value={form.conteudo_url} onChange={(e) => set("conteudo_url", e.target.value)} placeholder="https://..." />
           </FormField>
         )}
+        {form.tipo === "video" && form.conteudo_url && <VideoPreview url={form.conteudo_url as string} />}
 
-        {/* Video preview */}
-        {form.tipo === "video" && form.conteudo_url && (
-          <FormField label="Aperçu vidéo">
-            <VideoPreview url={form.conteudo_url} />
-          </FormField>
-        )}
-
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <FormField label="Ordre">
             <Input type="number" value={form.ordem} onChange={(e) => set("ordem", e.target.value)} />
           </FormField>
           <FormField label="Durée (min)">
-            <Input type="number" value={form.duracao_min} onChange={(e) => set("duracao_min", e.target.value)} placeholder="Optionnel" />
+            <Input type="number" value={form.duracao_min} onChange={(e) => set("duracao_min", e.target.value)} placeholder="Opt." />
+          </FormField>
+          <FormField label="Libérer après (jours)">
+            <Input type="number" value={form.unlock_after_days} onChange={(e) => set("unlock_after_days", e.target.value)} min={0} placeholder="0" />
           </FormField>
         </div>
 
@@ -157,9 +117,7 @@ export default function NovaAulaPage() {
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             Créer la leçon
           </button>
-          <button onClick={() => router.push(`/admin/modulos/${moduloId}`)} className="h-10 px-5 rounded-[10px] text-[14px] font-medium text-text-secondary hover:text-text-primary hover:bg-bg-tertiary border border-border transition-all">
-            Annuler
-          </button>
+          <button onClick={() => router.push(`/admin/modulos/${moduloId}`)} className="h-10 px-5 rounded-[10px] text-[14px] font-medium text-text-secondary hover:text-text-primary hover:bg-bg-tertiary border border-border transition-all">Annuler</button>
         </div>
       </div>
     </div>
