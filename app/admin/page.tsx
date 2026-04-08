@@ -1,21 +1,20 @@
 "use client";
 
-import { Suspense, useEffect, useState, useCallback, useMemo, useRef } from "react";
+import {
+  Suspense,
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import { useSearchParams } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import {
   Plus,
   Pencil,
   Trash2,
-  Users,
-  BookOpen,
   Loader2,
   X,
-  ToggleLeft,
-  ToggleRight,
-  CalendarDays,
   ChevronDown,
   ChevronRight,
   Upload,
@@ -26,61 +25,40 @@ import {
   ExternalLink,
   CheckSquare,
   BookOpenText,
+  ToggleLeft,
+  ToggleRight,
+  CalendarDays,
+  Save,
+  AlertCircle,
   GripVertical,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { GlowButton } from "@/components/ui/glow-button";
+import { cn } from "@/lib/utils";
 import type { Modulo, Aula, Profile, TipoAula } from "@/types/database";
 
-// --- Input class reusável ---
-const inputClass =
-  "w-full h-10 px-3 rounded-button bg-bg-tertiary border border-border text-text-primary text-[15px] focus:border-pink-primary focus:ring-1 focus:ring-pink-primary/30 transition-all outline-none";
-const labelClass = "block text-body-sm text-text-secondary mb-1.5";
-const textareaClass =
-  "w-full px-3 py-2.5 rounded-button bg-bg-tertiary border border-border text-text-primary text-[15px] resize-none focus:border-pink-primary focus:ring-1 focus:ring-pink-primary/30 transition-all outline-none";
+// Reusable styles
+const inputCls =
+  "w-full h-10 px-3 rounded-[10px] bg-bg-tertiary border border-border text-text-primary text-[15px] outline-none focus:border-pink-primary focus:ring-1 focus:ring-pink-primary/30 transition-all";
+const textareaCls =
+  "w-full px-3 py-2.5 rounded-[10px] bg-bg-tertiary border border-border text-text-primary text-[15px] resize-none outline-none focus:border-pink-primary focus:ring-1 focus:ring-pink-primary/30 transition-all";
+const btnPrimary =
+  "inline-flex items-center justify-center gap-2 h-10 px-5 rounded-[10px] bg-pink-primary text-bg-primary font-semibold text-[14px] hover:bg-pink-vibrant active:scale-[0.98] transition-all btn-glow disabled:opacity-50";
+const btnSecondary =
+  "inline-flex items-center justify-center gap-2 h-10 px-5 rounded-[10px] bg-bg-tertiary text-text-secondary border border-border font-medium text-[14px] hover:text-text-primary hover:border-pink-border transition-all";
+const btnGhost =
+  "inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg text-[13px] text-text-tertiary hover:text-pink-primary hover:bg-bg-tertiary transition-all";
 
-// --- Schemas ---
-const moduloSchema = z.object({
-  numero_semana: z.coerce.number().min(1, "Obrigatório"),
-  titulo: z.string().min(1, "Título obrigatório"),
-  subtitulo: z.string().optional().default(""),
-  descricao: z.string().optional().default(""),
-  cor_destaque: z.string().optional().default("#EC4899"),
-  ordem: z.coerce.number().min(0),
-});
-
-const aulaSchema = z.object({
-  titulo: z.string().min(1, "Título obrigatório"),
-  descricao: z.string().optional().default(""),
-  tipo: z.enum(["video", "pdf", "audio", "link", "checklist", "texto"]),
-  conteudo_url: z.string().optional().default(""),
-  duracao_min: z.coerce.number().optional(),
-  ordem: z.coerce.number().min(0),
-});
-
-type ModuloForm = z.infer<typeof moduloSchema>;
-type AulaForm = z.infer<typeof aulaSchema>;
-
-const tipoIcons: Record<TipoAula, typeof PlayCircle> = {
-  video: PlayCircle,
-  pdf: FileText,
-  audio: Headphones,
-  link: ExternalLink,
-  checklist: CheckSquare,
-  texto: BookOpenText,
-};
-
-const tipoLabels: Record<TipoAula, string> = {
-  video: "Vídeo (YouTube / Google Drive)",
-  pdf: "PDF (upload ou link)",
-  audio: "Áudio",
-  link: "Link externo (app, site)",
-  checklist: "Checklist interativo",
-  texto: "Texto / Artigo",
-};
+const TIPO_OPTIONS: { value: TipoAula; label: string; icon: typeof PlayCircle }[] = [
+  { value: "video", label: "Vidéo (YouTube / Drive)", icon: PlayCircle },
+  { value: "pdf", label: "PDF", icon: FileText },
+  { value: "audio", label: "Audio", icon: Headphones },
+  { value: "link", label: "Lien externe", icon: ExternalLink },
+  { value: "checklist", label: "Checklist", icon: CheckSquare },
+  { value: "texto", label: "Texte / Article", icon: BookOpenText },
+];
 
 // =============================================
-// Entry point with Suspense
+// Entry
 // =============================================
 export default function AdminPage() {
   return (
@@ -91,15 +69,12 @@ export default function AdminPage() {
         </div>
       }
     >
-      <AdminContent />
+      <AdminRouter />
     </Suspense>
   );
 }
 
-// =============================================
-// Main Admin Content
-// =============================================
-function AdminContent() {
+function AdminRouter() {
   const searchParams = useSearchParams();
   const tab = searchParams.get("tab") || "modulos";
   const supabase = useMemo(() => createClient(), []);
@@ -108,26 +83,34 @@ function AdminContent() {
   const [aulas, setAulas] = useState<Aula[]>([]);
   const [usuarios, setUsuarios] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
-    const [modulosRes, aulasRes, usuariosRes] = await Promise.all([
-      supabase.from("modulos").select("*").order("ordem"),
-      supabase.from("aulas").select("*").order("ordem"),
-      supabase
-        .from("profiles")
-        .select("*")
-        .order("created_at", { ascending: false }),
-    ]);
-
-    setModulos((modulosRes.data || []) as Modulo[]);
-    setAulas((aulasRes.data || []) as Aula[]);
-    setUsuarios((usuariosRes.data || []) as Profile[]);
-    setLoading(false);
+  const refresh = useCallback(async () => {
+    try {
+      const [m, a, u] = await Promise.all([
+        supabase.from("modulos").select("*").order("ordem"),
+        supabase.from("aulas").select("*").order("ordem"),
+        supabase
+          .from("profiles")
+          .select("*")
+          .order("created_at", { ascending: false }),
+      ]);
+      if (m.error) throw m.error;
+      setModulos(m.data as Modulo[]);
+      setAulas((a.data || []) as Aula[]);
+      setUsuarios((u.data || []) as Profile[]);
+      setError(null);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Erreur inconnue";
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
   }, [supabase]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    refresh();
+  }, [refresh]);
 
   if (loading) {
     return (
@@ -137,58 +120,38 @@ function AdminContent() {
     );
   }
 
-  return (
-    <div>
-      {/* Tabs */}
-      <div className="flex items-center gap-2 mb-8">
-        <a
-          href="/admin"
-          className={`px-4 py-2 rounded-button text-[15px] font-medium transition-colors ${
-            tab === "modulos"
-              ? "bg-pink-primary/10 text-pink-primary"
-              : "text-text-secondary hover:text-text-primary"
-          }`}
-        >
-          <BookOpen className="w-4 h-4 inline mr-1.5" />
-          Módulos & Aulas
-        </a>
-        <a
-          href="/admin?tab=usuarios"
-          className={`px-4 py-2 rounded-button text-[15px] font-medium transition-colors ${
-            tab === "usuarios"
-              ? "bg-pink-primary/10 text-pink-primary"
-              : "text-text-secondary hover:text-text-primary"
-          }`}
-        >
-          <Users className="w-4 h-4 inline mr-1.5" />
-          Usuárias
-        </a>
+  if (error) {
+    return (
+      <div className="text-center py-20">
+        <AlertCircle className="w-10 h-10 text-pink-primary mx-auto mb-3" />
+        <p className="text-body text-text-secondary mb-4">{error}</p>
+        <button onClick={refresh} className={btnPrimary}>
+          Réessayer
+        </button>
       </div>
+    );
+  }
 
-      {tab === "modulos" && (
-        <ModulosTab
-          modulos={modulos}
-          aulas={aulas}
-          supabase={supabase}
-          onRefresh={fetchData}
-        />
-      )}
+  if (tab === "usuarios") {
+    return (
+      <UsersTab usuarios={usuarios} supabase={supabase} onRefresh={refresh} />
+    );
+  }
 
-      {tab === "usuarios" && (
-        <UsuariosTab
-          usuarios={usuarios}
-          supabase={supabase}
-          onRefresh={fetchData}
-        />
-      )}
-    </div>
+  return (
+    <ModulesTab
+      modulos={modulos}
+      aulas={aulas}
+      supabase={supabase}
+      onRefresh={refresh}
+    />
   );
 }
 
 // =============================================
-// MÓDULOS TAB
+// MODULES TAB
 // =============================================
-function ModulosTab({
+function ModulesTab({
   modulos,
   aulas,
   supabase,
@@ -197,230 +160,203 @@ function ModulosTab({
   modulos: Modulo[];
   aulas: Aula[];
   supabase: ReturnType<typeof createClient>;
-  onRefresh: () => void;
+  onRefresh: () => Promise<void>;
 }) {
-  const [showModuloModal, setShowModuloModal] = useState(false);
-  const [editingModulo, setEditingModulo] = useState<Modulo | null>(null);
-  const [showAulaModal, setShowAulaModal] = useState(false);
-  const [editingAula, setEditingAula] = useState<Aula | null>(null);
-  const [aulaModuloId, setAulaModuloId] = useState<string>("");
-  const [expandedModulo, setExpandedModulo] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [moduleModal, setModuleModal] = useState<{
+    open: boolean;
+    data: Modulo | null;
+  }>({ open: false, data: null });
+  const [lessonModal, setLessonModal] = useState<{
+    open: boolean;
+    data: Aula | null;
+    moduloId: string;
+  }>({ open: false, data: null, moduloId: "" });
+  const [busy, setBusy] = useState(false);
 
-  const openNewModulo = () => {
-    setEditingModulo(null);
-    setShowModuloModal(true);
-  };
-
-  const openEditModulo = (m: Modulo) => {
-    setEditingModulo(m);
-    setShowModuloModal(true);
-  };
-
-  const openNewAula = (moduloId: string) => {
-    setEditingAula(null);
-    setAulaModuloId(moduloId);
-    setShowAulaModal(true);
-  };
-
-  const openEditAula = (aula: Aula) => {
-    setEditingAula(aula);
-    setAulaModuloId(aula.modulo_id);
-    setShowAulaModal(true);
-  };
-
-  const deleteModulo = async (id: string) => {
-    if (!confirm("Tem certeza? Isso apagará todas as aulas deste módulo."))
-      return;
+  const deleteModule = async (id: string) => {
+    if (!confirm("Supprimer ce module et toutes ses leçons ?")) return;
+    setBusy(true);
     await supabase.from("modulos").delete().eq("id", id);
-    onRefresh();
+    await onRefresh();
+    setBusy(false);
   };
 
-  const deleteAula = async (id: string) => {
-    if (!confirm("Excluir esta aula?")) return;
+  const deleteLesson = async (id: string) => {
+    if (!confirm("Supprimer cette leçon ?")) return;
+    setBusy(true);
     await supabase.from("aulas").delete().eq("id", id);
-    onRefresh();
+    await onRefresh();
+    setBusy(false);
   };
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="font-display text-h2 text-text-primary">Módulos</h1>
-          <p className="text-body-sm text-text-tertiary mt-1">
-            {modulos.length} módulos · {aulas.length} aulas no total
+          <h1 className="font-display text-h2 text-text-primary">Modules</h1>
+          <p className="text-[14px] text-text-tertiary mt-1">
+            {modulos.length} modules · {aulas.length} leçons au total
           </p>
         </div>
-        <GlowButton onClick={openNewModulo} size="sm">
-          <Plus className="w-4 h-4 mr-1.5" /> Novo módulo
-        </GlowButton>
+        <button
+          className={btnPrimary}
+          onClick={() => setModuleModal({ open: true, data: null })}
+        >
+          <Plus className="w-4 h-4" /> Nouveau module
+        </button>
       </div>
 
-      {/* Modulo modal */}
-      {showModuloModal && (
-        <ModuloModal
-          modulo={editingModulo}
-          totalModulos={modulos.length}
-          supabase={supabase}
-          onClose={() => setShowModuloModal(false)}
-          onSaved={() => {
-            setShowModuloModal(false);
-            onRefresh();
-          }}
-        />
-      )}
-
-      {/* Aula modal */}
-      {showAulaModal && (
-        <AulaModal
-          aula={editingAula}
-          moduloId={aulaModuloId}
-          totalAulas={aulas.filter((a) => a.modulo_id === aulaModuloId).length}
-          supabase={supabase}
-          onClose={() => setShowAulaModal(false)}
-          onSaved={() => {
-            setShowAulaModal(false);
-            onRefresh();
-          }}
-        />
-      )}
-
-      {/* Modules list */}
+      {/* Module list */}
       <div className="space-y-4">
-        {modulos.map((modulo) => {
-          const moduloAulas = aulas
-            .filter((a) => a.modulo_id === modulo.id)
+        {modulos.map((mod) => {
+          const modAulas = aulas
+            .filter((a) => a.modulo_id === mod.id)
             .sort((a, b) => a.ordem - b.ordem);
-          const isExpanded = expandedModulo === modulo.id;
+          const isOpen = expanded === mod.id;
 
           return (
             <div
-              key={modulo.id}
+              key={mod.id}
               className="rounded-card border border-border bg-bg-secondary overflow-hidden"
             >
-              {/* Module header */}
+              {/* Module row */}
               <div className="flex items-center gap-3 p-4">
-                {/* Capa thumbnail */}
+                {/* Thumbnail */}
                 <div
-                  className="w-14 h-14 rounded-button shrink-0 flex items-center justify-center overflow-hidden border border-border"
-                  style={{ backgroundColor: modulo.cor_destaque || "#1C1C1F" }}
+                  className="w-16 h-16 rounded-[10px] shrink-0 overflow-hidden border border-border flex items-center justify-center"
+                  style={{
+                    backgroundColor: mod.cor_destaque || "#1C1C1F",
+                  }}
                 >
-                  {modulo.banner_url ? (
+                  {mod.banner_url ? (
                     <img
-                      src={modulo.banner_url}
+                      src={mod.banner_url}
                       alt=""
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <ImageIcon className="w-5 h-5 text-text-tertiary" />
+                    <ImageIcon className="w-6 h-6 text-text-tertiary/50" />
                   )}
                 </div>
 
-                {/* Info */}
+                {/* Info + expand toggle */}
                 <button
-                  onClick={() =>
-                    setExpandedModulo(isExpanded ? null : modulo.id)
-                  }
                   className="flex-1 text-left min-w-0"
+                  onClick={() => setExpanded(isOpen ? null : mod.id)}
                 >
                   <div className="flex items-center gap-2">
-                    <h3 className="text-[15px] font-semibold text-text-primary truncate">
-                      Semana {modulo.numero_semana}: {modulo.titulo}
+                    <h3 className="text-[16px] font-semibold text-text-primary truncate">
+                      Semaine {mod.numero_semana} — {mod.titulo}
                     </h3>
-                    {isExpanded ? (
+                    {isOpen ? (
                       <ChevronDown className="w-4 h-4 text-text-tertiary shrink-0" />
                     ) : (
                       <ChevronRight className="w-4 h-4 text-text-tertiary shrink-0" />
                     )}
                   </div>
-                  <p className="text-[13px] text-text-tertiary truncate">
-                    {modulo.subtitulo || "Sem subtítulo"} ·{" "}
-                    {moduloAulas.length} aula
-                    {moduloAulas.length !== 1 ? "s" : ""}
+                  <p className="text-[13px] text-text-tertiary truncate mt-0.5">
+                    {mod.subtitulo || "—"} · {modAulas.length} leçon
+                    {modAulas.length !== 1 ? "s" : ""}
                   </p>
                 </button>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-0.5 shrink-0">
                   <button
-                    onClick={() => openEditModulo(modulo)}
-                    className="p-2 text-text-tertiary hover:text-pink-primary rounded-button hover:bg-bg-tertiary transition-colors"
-                    aria-label="Editar módulo"
+                    className={btnGhost}
+                    onClick={() =>
+                      setModuleModal({ open: true, data: mod })
+                    }
+                    aria-label="Modifier module"
                   >
-                    <Pencil className="w-4 h-4" />
+                    <Pencil className="w-3.5 h-3.5" />
                   </button>
                   <button
-                    onClick={() => deleteModulo(modulo.id)}
-                    className="p-2 text-text-tertiary hover:text-pink-primary rounded-button hover:bg-bg-tertiary transition-colors"
-                    aria-label="Excluir módulo"
+                    className={btnGhost}
+                    onClick={() => deleteModule(mod.id)}
+                    disabled={busy}
+                    aria-label="Supprimer module"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
 
-              {/* Aulas list (expandida) */}
-              {isExpanded && (
-                <div className="border-t border-border bg-bg-primary/50">
+              {/* Lessons panel */}
+              {isOpen && (
+                <div className="border-t border-border bg-bg-primary/40">
                   <div className="p-4 space-y-2">
-                    {moduloAulas.length === 0 && (
-                      <p className="text-[13px] text-text-tertiary text-center py-4">
-                        Nenhuma aula ainda. Adicione a primeira.
+                    {modAulas.length === 0 && (
+                      <p className="text-[13px] text-text-tertiary text-center py-6">
+                        Aucune leçon dans ce module. Ajoutez-en une !
                       </p>
                     )}
 
-                    {moduloAulas.map((aula) => {
-                      const TipoIcon = tipoIcons[aula.tipo as TipoAula] || BookOpenText;
+                    {modAulas.map((aula) => {
+                      const tipoOpt = TIPO_OPTIONS.find(
+                        (o) => o.value === aula.tipo
+                      );
+                      const TipoIcon = tipoOpt?.icon || BookOpenText;
                       return (
                         <div
                           key={aula.id}
-                          className="flex items-center gap-3 p-3 rounded-button bg-bg-secondary border border-border hover:border-pink-border transition-colors"
+                          className="flex items-center gap-3 p-3 rounded-[10px] bg-bg-secondary border border-border hover:border-pink-border/50 transition-colors"
                         >
-                          <GripVertical className="w-4 h-4 text-text-tertiary/50 shrink-0" />
-
+                          <GripVertical className="w-4 h-4 text-text-tertiary/30 shrink-0" />
                           <div className="w-8 h-8 rounded-lg bg-pink-primary/10 flex items-center justify-center shrink-0">
                             <TipoIcon className="w-4 h-4 text-pink-primary" />
                           </div>
-
                           <div className="flex-1 min-w-0">
-                            <span className="text-[14px] text-text-primary block truncate">
+                            <p className="text-[14px] text-text-primary truncate">
                               {aula.ordem}. {aula.titulo}
-                            </span>
-                            <span className="text-[12px] text-text-tertiary">
-                              {tipoLabels[aula.tipo as TipoAula]?.split(" (")[0] || aula.tipo}
+                            </p>
+                            <p className="text-[12px] text-text-tertiary">
+                              {tipoOpt?.label.split(" (")[0] || aula.tipo}
                               {aula.duracao_min
-                                ? ` · ${aula.duracao_min}min`
+                                ? ` · ${aula.duracao_min} min`
                                 : ""}
-                            </span>
+                              {aula.conteudo_url
+                                ? " · ✓ URL"
+                                : ""}
+                            </p>
                           </div>
-
-                          <div className="flex gap-1 shrink-0">
-                            <button
-                              onClick={() => openEditAula(aula)}
-                              className="p-1.5 text-text-tertiary hover:text-pink-primary rounded transition-colors"
-                              aria-label="Editar aula"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => deleteAula(aula.id)}
-                              className="p-1.5 text-text-tertiary hover:text-pink-primary rounded transition-colors"
-                              aria-label="Excluir aula"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                          <button
+                            className={btnGhost}
+                            onClick={() =>
+                              setLessonModal({
+                                open: true,
+                                data: aula,
+                                moduloId: mod.id,
+                              })
+                            }
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            className={btnGhost}
+                            onClick={() => deleteLesson(aula.id)}
+                            disabled={busy}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       );
                     })}
                   </div>
 
-                  {/* Add aula button */}
                   <div className="px-4 pb-4">
                     <button
-                      onClick={() => openNewAula(modulo.id)}
-                      className="flex items-center gap-2 w-full p-3 rounded-button border border-dashed border-border hover:border-pink-primary/40 text-body-sm text-text-tertiary hover:text-pink-primary transition-all justify-center"
+                      className="flex items-center justify-center gap-2 w-full p-3 rounded-[10px] border border-dashed border-border hover:border-pink-primary/40 text-[14px] text-text-tertiary hover:text-pink-primary transition-all"
+                      onClick={() =>
+                        setLessonModal({
+                          open: true,
+                          data: null,
+                          moduloId: mod.id,
+                        })
+                      }
                     >
-                      <Plus className="w-4 h-4" /> Adicionar aula
+                      <Plus className="w-4 h-4" /> Ajouter une leçon
                     </button>
                   </div>
                 </div>
@@ -430,138 +366,179 @@ function ModulosTab({
         })}
 
         {modulos.length === 0 && (
-          <div className="text-center py-16">
-            <BookOpen className="w-12 h-12 text-text-tertiary/40 mx-auto mb-4" />
+          <div className="text-center py-20 rounded-card border border-dashed border-border">
+            <BookOpenText className="w-12 h-12 text-text-tertiary/30 mx-auto mb-4" />
             <p className="text-body text-text-secondary mb-4">
-              Nenhum módulo criado ainda
+              Aucun module créé
             </p>
-            <GlowButton onClick={openNewModulo} size="sm">
-              <Plus className="w-4 h-4 mr-1.5" /> Criar primeiro módulo
-            </GlowButton>
+            <button
+              className={btnPrimary}
+              onClick={() => setModuleModal({ open: true, data: null })}
+            >
+              <Plus className="w-4 h-4" /> Créer le premier module
+            </button>
           </div>
         )}
       </div>
+
+      {/* Module Modal */}
+      {moduleModal.open && (
+        <ModuleFormModal
+          module={moduleModal.data}
+          totalModules={modulos.length}
+          supabase={supabase}
+          onClose={() => setModuleModal({ open: false, data: null })}
+          onSaved={async () => {
+            setModuleModal({ open: false, data: null });
+            await onRefresh();
+          }}
+        />
+      )}
+
+      {/* Lesson Modal */}
+      {lessonModal.open && (
+        <LessonFormModal
+          lesson={lessonModal.data}
+          moduloId={lessonModal.moduloId}
+          totalLessons={
+            aulas.filter((a) => a.modulo_id === lessonModal.moduloId).length
+          }
+          supabase={supabase}
+          onClose={() =>
+            setLessonModal({ open: false, data: null, moduloId: "" })
+          }
+          onSaved={async () => {
+            setLessonModal({ open: false, data: null, moduloId: "" });
+            await onRefresh();
+          }}
+        />
+      )}
     </div>
   );
 }
 
 // =============================================
-// MÓDULO MODAL (criar/editar + upload de capa)
+// MODULE FORM MODAL
 // =============================================
-function ModuloModal({
-  modulo,
-  totalModulos,
+function ModuleFormModal({
+  module: mod,
+  totalModules,
   supabase,
   onClose,
   onSaved,
 }: {
-  modulo: Modulo | null;
-  totalModulos: number;
+  module: Modulo | null;
+  totalModules: number;
   supabase: ReturnType<typeof createClient>;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: () => Promise<void>;
 }) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [bannerPreview, setBannerPreview] = useState<string | null>(
-    modulo?.banner_url || null
-  );
+  const [bannerUrl, setBannerUrl] = useState(mod?.banner_url || "");
+  const [formError, setFormError] = useState("");
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<ModuloForm>({
-    resolver: zodResolver(moduloSchema),
-    defaultValues: modulo
-      ? {
-          numero_semana: modulo.numero_semana,
-          titulo: modulo.titulo,
-          subtitulo: modulo.subtitulo,
-          descricao: modulo.descricao,
-          cor_destaque: modulo.cor_destaque || "#EC4899",
-          ordem: modulo.ordem,
-        }
-      : {
-          numero_semana: totalModulos + 1,
-          titulo: "",
-          subtitulo: "",
-          descricao: "",
-          cor_destaque: "#EC4899",
-          ordem: totalModulos + 1,
-        },
+  // Form state (controlled, simpler than react-hook-form for reliability)
+  const [form, setForm] = useState({
+    numero_semana: mod?.numero_semana ?? totalModules + 1,
+    titulo: mod?.titulo ?? "",
+    subtitulo: mod?.subtitulo ?? "",
+    descricao: mod?.descricao ?? "",
+    cor_destaque: mod?.cor_destaque ?? "#EC4899",
+    ordem: mod?.ordem ?? totalModules + 1,
   });
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const set = (key: string, val: string | number) =>
+    setForm((prev) => ({ ...prev, [key]: val }));
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     setUploading(true);
     const ext = file.name.split(".").pop();
-    const fileName = `banners/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-
+    const path = `banners/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
     const { error } = await supabase.storage
       .from("content")
-      .upload(fileName, file, { upsert: true });
-
-    if (!error) {
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("content").getPublicUrl(fileName);
-      setBannerPreview(publicUrl);
+      .upload(path, file, { upsert: true });
+    if (error) {
+      setFormError("Erreur upload: " + error.message);
     } else {
-      alert("Erro ao fazer upload: " + error.message);
+      const { data } = supabase.storage.from("content").getPublicUrl(path);
+      setBannerUrl(data.publicUrl);
     }
     setUploading(false);
   };
 
-  const onSubmit = async (data: ModuloForm) => {
+  const handleSubmit = async () => {
+    if (!form.titulo.trim()) {
+      setFormError("Le titre est obligatoire");
+      return;
+    }
+    setSaving(true);
+    setFormError("");
+
     const payload = {
-      ...data,
-      banner_url: bannerPreview,
+      ...form,
+      numero_semana: Number(form.numero_semana),
+      ordem: Number(form.ordem),
+      banner_url: bannerUrl || null,
     };
 
-    if (modulo) {
-      await supabase.from("modulos").update(payload).eq("id", modulo.id);
+    let result;
+    if (mod) {
+      result = await supabase
+        .from("modulos")
+        .update(payload)
+        .eq("id", mod.id);
     } else {
-      await supabase.from("modulos").insert(payload);
+      result = await supabase.from("modulos").insert(payload);
     }
-    onSaved();
+
+    if (result.error) {
+      setFormError(result.error.message);
+      setSaving(false);
+      return;
+    }
+
+    await onSaved();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-primary/80 backdrop-blur-sm p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-bg-primary/80 backdrop-blur-sm p-4"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
       <div className="bg-bg-secondary border border-border rounded-card p-6 md:p-8 w-full max-w-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="font-display text-h4 text-text-primary">
-            {modulo ? "Editar módulo" : "Novo módulo"}
+          <h2 className="font-display text-[22px] text-text-primary">
+            {mod ? "Modifier le module" : "Nouveau module"}
           </h2>
-          <button
-            onClick={onClose}
-            className="text-text-tertiary hover:text-text-primary"
-          >
+          <button onClick={onClose} className="text-text-tertiary hover:text-text-primary p-1">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-          {/* Capa / Banner */}
+        <div className="space-y-5">
+          {/* Cover image */}
           <div>
-            <label className={labelClass}>Capa do módulo</label>
+            <label className="block text-[14px] text-text-secondary mb-2">
+              Image de couverture
+            </label>
             <div
-              className="relative w-full h-40 rounded-card border-2 border-dashed border-border hover:border-pink-primary/40 transition-colors cursor-pointer overflow-hidden group"
-              onClick={() => fileInputRef.current?.click()}
+              className="relative w-full h-44 rounded-card border-2 border-dashed border-border hover:border-pink-primary/40 transition-colors cursor-pointer overflow-hidden group"
+              onClick={() => fileRef.current?.click()}
             >
-              {bannerPreview ? (
+              {bannerUrl ? (
                 <>
                   <img
-                    src={bannerPreview}
-                    alt="Capa"
+                    src={bannerUrl}
+                    alt=""
                     className="w-full h-full object-cover"
                   />
                   <div className="absolute inset-0 bg-bg-primary/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <span className="text-body-sm text-text-primary font-medium">
-                      Trocar imagem
+                    <span className="text-[14px] text-text-primary font-medium">
+                      Changer l&apos;image
                     </span>
                   </div>
                 </>
@@ -572,10 +549,10 @@ function ModuloModal({
                   ) : (
                     <>
                       <Upload className="w-8 h-8 mb-2" />
-                      <span className="text-body-sm">
-                        Clique para enviar uma imagem
+                      <span className="text-[14px]">
+                        Cliquez pour envoyer
                       </span>
-                      <span className="text-[12px] text-text-tertiary mt-1">
+                      <span className="text-[12px] mt-1 text-text-tertiary">
                         JPG, PNG ou WebP
                       </span>
                     </>
@@ -583,373 +560,399 @@ function ModuloModal({
                 </div>
               )}
               <input
-                ref={fileInputRef}
+                ref={fileRef}
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={handleFileUpload}
+                onChange={handleUpload}
               />
             </div>
           </div>
 
-          {/* Nº Semana + Ordem */}
+          {/* Week + Order */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={labelClass}>Nº Semana</label>
+              <label className="block text-[14px] text-text-secondary mb-1.5">
+                N° Semaine
+              </label>
               <input
-                {...register("numero_semana")}
                 type="number"
-                className={inputClass}
+                value={form.numero_semana}
+                onChange={(e) => set("numero_semana", e.target.value)}
+                className={inputCls}
               />
-              {errors.numero_semana && (
-                <p className="text-[12px] text-pink-primary mt-1">
-                  {errors.numero_semana.message}
-                </p>
-              )}
             </div>
             <div>
-              <label className={labelClass}>Ordem de exibição</label>
+              <label className="block text-[14px] text-text-secondary mb-1.5">
+                Ordre d&apos;affichage
+              </label>
               <input
-                {...register("ordem")}
                 type="number"
-                className={inputClass}
+                value={form.ordem}
+                onChange={(e) => set("ordem", e.target.value)}
+                className={inputCls}
               />
             </div>
           </div>
 
-          {/* Título */}
+          {/* Title */}
           <div>
-            <label className={labelClass}>Título</label>
+            <label className="block text-[14px] text-text-secondary mb-1.5">
+              Titre *
+            </label>
             <input
-              {...register("titulo")}
-              className={inputClass}
-              placeholder="Ex: Despertar do Corpo"
-            />
-            {errors.titulo && (
-              <p className="text-[12px] text-pink-primary mt-1">
-                {errors.titulo.message}
-              </p>
-            )}
-          </div>
-
-          {/* Subtítulo */}
-          <div>
-            <label className={labelClass}>Subtítulo</label>
-            <input
-              {...register("subtitulo")}
-              className={inputClass}
-              placeholder="Breve descrição que aparece nos cards"
+              value={form.titulo}
+              onChange={(e) => set("titulo", e.target.value)}
+              className={inputCls}
+              placeholder="Ex: Réveil du Corps"
             />
           </div>
 
-          {/* Descrição */}
+          {/* Subtitle */}
           <div>
-            <label className={labelClass}>Descrição completa</label>
+            <label className="block text-[14px] text-text-secondary mb-1.5">
+              Sous-titre
+            </label>
+            <input
+              value={form.subtitulo}
+              onChange={(e) => set("subtitulo", e.target.value)}
+              className={inputCls}
+              placeholder="Courte description pour les cartes"
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-[14px] text-text-secondary mb-1.5">
+              Description
+            </label>
             <textarea
-              {...register("descricao")}
+              value={form.descricao}
+              onChange={(e) => set("descricao", e.target.value)}
               rows={4}
-              className={textareaClass}
-              placeholder="Texto detalhado sobre o módulo..."
+              className={textareaCls}
+              placeholder="Description détaillée du module..."
             />
           </div>
 
-          {/* Cor destaque */}
+          {/* Accent color */}
           <div>
-            <label className={labelClass}>Cor destaque</label>
+            <label className="block text-[14px] text-text-secondary mb-1.5">
+              Couleur d&apos;accent
+            </label>
             <div className="flex items-center gap-3">
               <input
-                {...register("cor_destaque")}
                 type="color"
-                className="w-10 h-10 rounded-button border border-border cursor-pointer"
+                value={form.cor_destaque}
+                onChange={(e) => set("cor_destaque", e.target.value)}
+                className="w-10 h-10 rounded-lg border border-border cursor-pointer"
               />
               <span className="text-[13px] text-text-tertiary">
-                Cor usada como fundo quando não há capa
+                Couleur de fond quand il n&apos;y a pas d&apos;image
               </span>
             </div>
           </div>
 
+          {/* Error */}
+          {formError && (
+            <div className="p-3 rounded-[10px] bg-pink-dark/20 border border-pink-dark/30 text-pink-primary text-[14px]">
+              {formError}
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex gap-3 pt-3 border-t border-border">
-            <GlowButton type="submit" disabled={isSubmitting} size="md">
-              {isSubmitting ? (
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-              ) : null}
-              {modulo ? "Salvar alterações" : "Criar módulo"}
-            </GlowButton>
-            <GlowButton
-              type="button"
-              variant="ghost"
-              size="md"
-              onClick={onClose}
+            <button
+              className={btnPrimary}
+              onClick={handleSubmit}
+              disabled={saving}
             >
-              Cancelar
-            </GlowButton>
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              <Save className="w-4 h-4" />
+              {mod ? "Enregistrer" : "Créer le module"}
+            </button>
+            <button className={btnSecondary} onClick={onClose}>
+              Annuler
+            </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
 }
 
 // =============================================
-// AULA MODAL (criar/editar com tipo + url)
+// LESSON FORM MODAL
 // =============================================
-function AulaModal({
-  aula,
+function LessonFormModal({
+  lesson,
   moduloId,
-  totalAulas,
+  totalLessons,
   supabase,
   onClose,
   onSaved,
 }: {
-  aula: Aula | null;
+  lesson: Aula | null;
   moduloId: string;
-  totalAulas: number;
+  totalLessons: number;
   supabase: ReturnType<typeof createClient>;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: () => Promise<void>;
 }) {
-  const {
-    register,
-    handleSubmit,
-    watch,
-    formState: { errors, isSubmitting },
-  } = useForm<AulaForm>({
-    resolver: zodResolver(aulaSchema),
-    defaultValues: aula
-      ? {
-          titulo: aula.titulo,
-          descricao: aula.descricao,
-          tipo: aula.tipo as TipoAula,
-          conteudo_url: aula.conteudo_url || "",
-          duracao_min: aula.duracao_min || undefined,
-          ordem: aula.ordem,
-        }
-      : {
-          titulo: "",
-          descricao: "",
-          tipo: "video",
-          conteudo_url: "",
-          ordem: totalAulas + 1,
-        },
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  const [form, setForm] = useState({
+    titulo: lesson?.titulo ?? "",
+    descricao: lesson?.descricao ?? "",
+    tipo: (lesson?.tipo as TipoAula) ?? "video",
+    conteudo_url: lesson?.conteudo_url ?? "",
+    duracao_min: lesson?.duracao_min ?? "",
+    ordem: lesson?.ordem ?? totalLessons + 1,
   });
 
-  const tipoAtual = watch("tipo");
+  const set = (key: string, val: string | number) =>
+    setForm((prev) => ({ ...prev, [key]: val }));
 
-  const getUrlPlaceholder = (tipo: string): string => {
-    switch (tipo) {
-      case "video":
-        return "https://youtube.com/watch?v=... ou link do Google Drive";
-      case "pdf":
-        return "https://link-do-pdf.com/arquivo.pdf";
-      case "audio":
-        return "https://link-do-audio.com/arquivo.mp3";
-      case "link":
-        return "https://app-externo.com";
-      default:
-        return "URL do conteúdo (opcional)";
-    }
+  const urlPlaceholders: Record<string, string> = {
+    video: "https://youtube.com/watch?v=... ou lien Google Drive",
+    pdf: "https://lien-vers-le-pdf.com/fichier.pdf",
+    audio: "https://lien-vers-audio.com/fichier.mp3",
+    link: "https://app-externe.com",
+    checklist: "",
+    texto: "",
   };
 
-  const getUrlHelp = (tipo: string): string => {
-    switch (tipo) {
-      case "video":
-        return "Cole o link do YouTube, Vimeo ou Google Drive. Para Drive, use o link de compartilhamento.";
-      case "pdf":
-        return "Cole o link direto do PDF. Pode ser do Google Drive (use link de preview) ou qualquer URL pública.";
-      case "link":
-        return "Link do app ou site externo que a aluna deve acessar.";
-      default:
-        return "";
-    }
+  const urlHelps: Record<string, string> = {
+    video:
+      "Collez le lien YouTube, Vimeo ou Google Drive (lien de partage).",
+    pdf: "Lien direct vers le PDF ou lien de preview Google Drive.",
+    link: "Lien de l'app ou site externe que l'élève doit visiter.",
+    audio: "Lien direct vers le fichier audio.",
   };
 
-  const onSubmit = async (data: AulaForm) => {
+  const handleSubmit = async () => {
+    if (!form.titulo.trim()) {
+      setFormError("Le titre est obligatoire");
+      return;
+    }
+    setSaving(true);
+    setFormError("");
+
     const payload = {
-      ...data,
       modulo_id: moduloId,
-      conteudo_url: data.conteudo_url || null,
-      duracao_min: data.duracao_min || null,
+      titulo: form.titulo,
+      descricao: form.descricao,
+      tipo: form.tipo,
+      conteudo_url: form.conteudo_url || null,
+      duracao_min: form.duracao_min ? Number(form.duracao_min) : null,
+      ordem: Number(form.ordem),
     };
 
-    if (aula) {
-      await supabase.from("aulas").update(payload).eq("id", aula.id);
+    let result;
+    if (lesson) {
+      result = await supabase
+        .from("aulas")
+        .update(payload)
+        .eq("id", lesson.id);
     } else {
-      await supabase.from("aulas").insert(payload);
+      result = await supabase.from("aulas").insert(payload);
     }
-    onSaved();
+
+    if (result.error) {
+      setFormError(result.error.message);
+      setSaving(false);
+      return;
+    }
+
+    await onSaved();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-primary/80 backdrop-blur-sm p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-bg-primary/80 backdrop-blur-sm p-4"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
       <div className="bg-bg-secondary border border-border rounded-card p-6 md:p-8 w-full max-w-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="font-display text-h4 text-text-primary">
-            {aula ? "Editar aula" : "Nova aula"}
+          <h2 className="font-display text-[22px] text-text-primary">
+            {lesson ? "Modifier la leçon" : "Nouvelle leçon"}
           </h2>
-          <button
-            onClick={onClose}
-            className="text-text-tertiary hover:text-text-primary"
-          >
+          <button onClick={onClose} className="text-text-tertiary hover:text-text-primary p-1">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-          {/* Título */}
+        <div className="space-y-5">
+          {/* Title */}
           <div>
-            <label className={labelClass}>Título da aula</label>
+            <label className="block text-[14px] text-text-secondary mb-1.5">
+              Titre *
+            </label>
             <input
-              {...register("titulo")}
-              className={inputClass}
-              placeholder="Ex: Boas-vindas ao seu ritual"
+              value={form.titulo}
+              onChange={(e) => set("titulo", e.target.value)}
+              className={inputCls}
+              placeholder="Ex: Bienvenue dans votre rituel"
             />
-            {errors.titulo && (
-              <p className="text-[12px] text-pink-primary mt-1">
-                {errors.titulo.message}
-              </p>
-            )}
           </div>
 
-          {/* Descrição */}
+          {/* Description */}
           <div>
-            <label className={labelClass}>Descrição</label>
+            <label className="block text-[14px] text-text-secondary mb-1.5">
+              Description
+            </label>
             <textarea
-              {...register("descricao")}
+              value={form.descricao}
+              onChange={(e) => set("descricao", e.target.value)}
               rows={3}
-              className={textareaClass}
-              placeholder="Descreva o conteúdo desta aula..."
+              className={textareaCls}
+              placeholder="Décrivez le contenu de cette leçon..."
             />
           </div>
 
-          {/* Tipo de conteúdo — visual, com ícones */}
+          {/* Content type — visual cards */}
           <div>
-            <label className={labelClass}>Tipo de conteúdo</label>
+            <label className="block text-[14px] text-text-secondary mb-2">
+              Type de contenu
+            </label>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              {(Object.keys(tipoLabels) as TipoAula[]).map((tipo) => {
-                const Icon = tipoIcons[tipo];
-                const isSelected = tipoAtual === tipo;
+              {TIPO_OPTIONS.map((opt) => {
+                const Icon = opt.icon;
+                const selected = form.tipo === opt.value;
                 return (
-                  <label
-                    key={tipo}
-                    className={`flex items-center gap-2 p-3 rounded-button border cursor-pointer transition-all ${
-                      isSelected
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => set("tipo", opt.value)}
+                    className={cn(
+                      "flex items-center gap-2 p-3 rounded-[10px] border text-left transition-all text-[13px] font-medium",
+                      selected
                         ? "border-pink-primary bg-pink-primary/10 text-pink-primary"
                         : "border-border bg-bg-tertiary text-text-secondary hover:border-pink-border"
-                    }`}
+                    )}
                   >
-                    <input
-                      {...register("tipo")}
-                      type="radio"
-                      value={tipo}
-                      className="sr-only"
-                    />
                     <Icon className="w-4 h-4 shrink-0" />
-                    <span className="text-[13px] font-medium">
-                      {tipoLabels[tipo].split(" (")[0]}
-                    </span>
-                  </label>
+                    {opt.label.split(" (")[0]}
+                  </button>
                 );
               })}
             </div>
           </div>
 
-          {/* URL do conteúdo */}
-          {tipoAtual !== "checklist" && tipoAtual !== "texto" && (
+          {/* URL */}
+          {form.tipo !== "checklist" && form.tipo !== "texto" && (
             <div>
-              <label className={labelClass}>URL do conteúdo</label>
+              <label className="block text-[14px] text-text-secondary mb-1.5">
+                URL du contenu
+              </label>
               <input
-                {...register("conteudo_url")}
-                className={inputClass}
-                placeholder={getUrlPlaceholder(tipoAtual)}
+                value={form.conteudo_url}
+                onChange={(e) => set("conteudo_url", e.target.value)}
+                className={inputCls}
+                placeholder={urlPlaceholders[form.tipo] || "https://..."}
               />
-              {getUrlHelp(tipoAtual) && (
+              {urlHelps[form.tipo] && (
                 <p className="text-[12px] text-text-tertiary mt-1.5">
-                  {getUrlHelp(tipoAtual)}
+                  {urlHelps[form.tipo]}
                 </p>
               )}
             </div>
           )}
 
-          {/* Ordem + Duração */}
+          {/* Order + Duration */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={labelClass}>Ordem</label>
+              <label className="block text-[14px] text-text-secondary mb-1.5">
+                Ordre
+              </label>
               <input
-                {...register("ordem")}
                 type="number"
-                className={inputClass}
+                value={form.ordem}
+                onChange={(e) => set("ordem", e.target.value)}
+                className={inputCls}
               />
             </div>
             <div>
-              <label className={labelClass}>Duração (min)</label>
+              <label className="block text-[14px] text-text-secondary mb-1.5">
+                Durée (min)
+              </label>
               <input
-                {...register("duracao_min")}
                 type="number"
-                className={inputClass}
-                placeholder="Opcional"
+                value={form.duracao_min}
+                onChange={(e) => set("duracao_min", e.target.value)}
+                className={inputCls}
+                placeholder="Optionnel"
               />
             </div>
           </div>
 
+          {/* Error */}
+          {formError && (
+            <div className="p-3 rounded-[10px] bg-pink-dark/20 border border-pink-dark/30 text-pink-primary text-[14px]">
+              {formError}
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex gap-3 pt-3 border-t border-border">
-            <GlowButton type="submit" disabled={isSubmitting} size="md">
-              {isSubmitting ? (
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-              ) : null}
-              {aula ? "Salvar alterações" : "Criar aula"}
-            </GlowButton>
-            <GlowButton
-              type="button"
-              variant="ghost"
-              size="md"
-              onClick={onClose}
+            <button
+              className={btnPrimary}
+              onClick={handleSubmit}
+              disabled={saving}
             >
-              Cancelar
-            </GlowButton>
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              <Save className="w-4 h-4" />
+              {lesson ? "Enregistrer" : "Créer la leçon"}
+            </button>
+            <button className={btnSecondary} onClick={onClose}>
+              Annuler
+            </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
 }
 
 // =============================================
-// USUÁRIAS TAB
+// USERS TAB
 // =============================================
-function UsuariosTab({
+function UsersTab({
   usuarios,
   supabase,
   onRefresh,
 }: {
   usuarios: Profile[];
   supabase: ReturnType<typeof createClient>;
-  onRefresh: () => void;
+  onRefresh: () => Promise<void>;
 }) {
-  const toggleAtivo = async (user: Profile) => {
+  const toggleActive = async (user: Profile) => {
     await supabase
       .from("profiles")
       .update({ ativo: !user.ativo })
       .eq("id", user.id);
-    onRefresh();
+    await onRefresh();
   };
 
-  const updateDataInicio = async (user: Profile, novaData: string) => {
+  const updateDate = async (user: Profile, date: string) => {
     await supabase
       .from("profiles")
-      .update({ data_inicio_jornada: novaData })
+      .update({ data_inicio_jornada: new Date(date).toISOString() })
       .eq("id", user.id);
-    onRefresh();
+    await onRefresh();
   };
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="font-display text-h2 text-text-primary">Usuárias</h1>
-        <p className="text-body-sm text-text-tertiary mt-1">
-          {usuarios.length} usuária{usuarios.length !== 1 ? "s" : ""}{" "}
-          cadastrada{usuarios.length !== 1 ? "s" : ""}
+      <div className="mb-8">
+        <h1 className="font-display text-h2 text-text-primary">
+          Utilisatrices
+        </h1>
+        <p className="text-[14px] text-text-tertiary mt-1">
+          {usuarios.length} utilisatrice
+          {usuarios.length !== 1 ? "s" : ""} inscrite
+          {usuarios.length !== 1 ? "s" : ""}
         </p>
       </div>
 
@@ -965,14 +968,14 @@ function UsuariosTab({
                   {user.nome}
                 </h3>
                 {user.role === "admin" && (
-                  <span className="px-2 py-0.5 rounded-tag bg-pink-primary/10 text-pink-primary text-[11px] font-semibold">
-                    ADMIN
+                  <span className="px-2 py-0.5 rounded-tag bg-pink-primary/15 text-pink-primary text-[11px] font-bold uppercase tracking-wide">
+                    Admin
                   </span>
                 )}
               </div>
-              <p className="text-[13px] text-text-tertiary">
-                {user.ativo ? "Ativa" : "Inativa"} · Membro desde{" "}
-                {new Date(user.created_at).toLocaleDateString("pt-BR")}
+              <p className="text-[13px] text-text-tertiary mt-0.5">
+                {user.ativo ? "Active" : "Inactive"} · Membre depuis{" "}
+                {new Date(user.created_at).toLocaleDateString("fr-FR")}
               </p>
             </div>
 
@@ -987,25 +990,21 @@ function UsuariosTab({
                       .split("T")[0]
                   }
                   onChange={(e) => {
-                    if (e.target.value) {
-                      updateDataInicio(
-                        user,
-                        new Date(e.target.value).toISOString()
-                      );
-                    }
+                    if (e.target.value) updateDate(user, e.target.value);
                   }}
-                  className="h-8 px-2 rounded bg-bg-tertiary border border-border text-text-primary text-[13px]"
+                  className="h-8 px-2 rounded-lg bg-bg-tertiary border border-border text-text-primary text-[13px]"
                 />
               </div>
 
               <button
-                onClick={() => toggleAtivo(user)}
-                className={`p-1.5 rounded transition-colors ${
+                onClick={() => toggleActive(user)}
+                className={cn(
+                  "p-1.5 rounded-lg transition-colors",
                   user.ativo
                     ? "text-pink-success hover:text-pink-primary"
                     : "text-text-tertiary hover:text-text-secondary"
-                }`}
-                aria-label={user.ativo ? "Desativar" : "Ativar"}
+                )}
+                aria-label={user.ativo ? "Désactiver" : "Activer"}
               >
                 {user.ativo ? (
                   <ToggleRight className="w-6 h-6" />
@@ -1016,12 +1015,6 @@ function UsuariosTab({
             </div>
           </div>
         ))}
-
-        {usuarios.length === 0 && (
-          <p className="text-body-sm text-text-tertiary text-center py-8">
-            Nenhuma usuária cadastrada ainda.
-          </p>
-        )}
       </div>
     </div>
   );

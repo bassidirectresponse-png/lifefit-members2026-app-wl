@@ -1,4 +1,44 @@
+"use client";
+
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+import { BookOpen, Users, ArrowLeft } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+function AdminNav() {
+  const searchParams = useSearchParams();
+  const tab = searchParams.get("tab") || "modulos";
+
+  return (
+    <nav className="flex items-center gap-1">
+      <Link
+        href="/admin"
+        className={cn(
+          "flex items-center gap-1.5 px-3 py-1.5 text-[14px] rounded-button transition-colors",
+          tab === "modulos"
+            ? "text-pink-primary bg-pink-primary/10"
+            : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary"
+        )}
+      >
+        <BookOpen className="w-4 h-4" />
+        Modules
+      </Link>
+      <Link
+        href="/admin?tab=usuarios"
+        className={cn(
+          "flex items-center gap-1.5 px-3 py-1.5 text-[14px] rounded-button transition-colors",
+          tab === "usuarios"
+            ? "text-pink-primary bg-pink-primary/10"
+            : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary"
+        )}
+      >
+        <Users className="w-4 h-4" />
+        Utilisatrices
+      </Link>
+    </nav>
+  );
+}
 
 export default function AdminLayout({
   children,
@@ -7,35 +47,25 @@ export default function AdminLayout({
 }) {
   return (
     <div className="min-h-screen bg-bg-primary">
-      <header className="border-b border-border bg-bg-secondary">
+      <header className="sticky top-0 z-40 border-b border-border bg-bg-secondary/95 backdrop-blur-md">
         <div className="container-app flex items-center justify-between h-14">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-6">
             <Link
               href="/admin"
               className="font-display text-lg text-text-primary"
             >
               Life Fit <span className="italic text-pink-primary">Admin</span>
             </Link>
-            <nav className="hidden md:flex items-center gap-1 ml-6">
-              <Link
-                href="/admin"
-                className="px-3 py-1.5 text-[14px] text-text-secondary hover:text-text-primary rounded-button hover:bg-bg-tertiary transition-colors"
-              >
-                Módulos
-              </Link>
-              <Link
-                href="/admin?tab=usuarios"
-                className="px-3 py-1.5 text-[14px] text-text-secondary hover:text-text-primary rounded-button hover:bg-bg-tertiary transition-colors"
-              >
-                Usuárias
-              </Link>
-            </nav>
+            <Suspense fallback={null}>
+              <AdminNav />
+            </Suspense>
           </div>
           <Link
             href="/"
-            className="text-[14px] text-text-tertiary hover:text-pink-primary transition-colors"
+            className="flex items-center gap-1.5 text-[14px] text-text-tertiary hover:text-pink-primary transition-colors"
           >
-            Voltar ao site
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Retour au site
           </Link>
         </div>
       </header>
